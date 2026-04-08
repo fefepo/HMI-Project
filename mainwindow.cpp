@@ -104,15 +104,15 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateSensorData()
 {
-    // 1. 데이터 계산
+    // 1. 데이터 계산 (진동과 온도는 여전히 전체적인 부하 흐름을 따름)
     double average = (forceX + forceY + forceZ + acceleration) / 4.0;
     vibration = (average * 0.95) + QRandomGenerator::global()->bounded(0, 11);
 
     double targetTemp = 25.0 + (average * 0.7);
     temperature += (targetTemp - temperature) * 0.005;
 
-    // 2. 인터락 체크 (핵심 수정: 원인별 메시지 분리)
-    if (average >= 90.0 || temperature >= 85.0) {
+    // 2. 인터락 체크 (핵심 수정: 개별 항목 검사)
+    if (forceX >= 90.0 || forceY >= 90.0 || forceZ >= 90.0 || acceleration >= 90.0 || temperature >= 85.0) {
         timer->stop();
 
         QString errorMsg;
@@ -121,11 +121,27 @@ void MainWindow::updateSensorData()
         if (temperature >= 85.0) {
             // [원인: 과열]
             logStatus = "OVERHEAT";
-            errorMsg = QString("장비 과열(Overheat) 인터락 발생!\n현재 온도: %1°C (기준: 85.0°C)").arg(temperature, 0, 'f', 1);
-        } else {
-            // [원인: 과부하] - 이제 온도 타령 안 함
+            errorMsg = QString("장비 과열(Overheat) 인터락 발생!\n현재 온도: %1°C (최대치: 85.0°C)").arg(temperature, 0, 'f', 1);
+        }
+        else {
+            // [원인: 과부하] - 어떤 항목이 범인인지 특정
             logStatus = "OVERLOAD";
-            errorMsg = QString("시스템 과부하(Overload) 인터락 발생!\n현재 평균 부하: %1 (기준: 90.0)").arg(average, 0, 'f', 1);
+
+            QString sensorName;
+            double sensorValue = 0.0;
+
+            // 우선순위에 따라 가장 먼저 임계치를 넘은 항목을 찾음
+            if (forceX >= 90.0) { sensorName = "X축 힘"; sensorValue = forceX; }
+            else if (forceY >= 90.0) { sensorName = "Y축 힘"; sensorValue = forceY; }
+            else if (forceZ >= 90.0) { sensorName = "Z축 힘"; sensorValue = forceZ; }
+            else { sensorName = "가속도"; sensorValue = acceleration; }
+
+            // "평균"을 빼고 구체적인 센서 명칭과 수치를 표시
+            errorMsg = QString("시스템 과부하(Overload) 인터락 발생!\n"
+                               "감지 항목: %1\n"
+                               "현재 수치: %2 (최대치: 90.0)")
+                           .arg(sensorName)
+                           .arg(sensorValue, 0, 'f', 1);
         }
 
         // 즉시 로그 기록
