@@ -3,12 +3,14 @@
 
 #include <QMainWindow>
 #include <QTimer>
-#include <QtCharts> // 필수 헤더
-
-QT_USE_NAMESPACE // 네임스페이스 오류 방지
+#include <QtCharts>
+#include <QFile>
+#include <QTextStream>
 
 #include "client.h"
 #include "server.h"
+
+QT_USE_NAMESPACE // 네임스페이스 오류 방지
 
     QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -29,16 +31,21 @@ private slots:
     void on_forceZSlider_valueChanged(int value);
     void on_accelerationSlider_valueChanged(int value);
     void on_dataReceived(QString data);
+    void on_resetButton_clicked(); // [추가] 재시작 버튼 슬롯
 
 private:
-    QFile *logFile;
     Ui::MainWindow *ui;
     QTimer *timer;
+    QFile *logFile;
+
+    // CSV 읽기용 추가 변수
+    QFile *inputFile = nullptr;
+    QTextStream *inputStream = nullptr;
+    bool isCsvMode = true;
 
     Server *server = nullptr;
     Client *client = nullptr;
 
-    // 가독성을 위해 각 시리즈 선언
     QLineSeries *vibrationSeries = nullptr;
     QLineSeries *forceSeriesX = nullptr;
     QLineSeries *forceSeriesY = nullptr;
@@ -46,9 +53,9 @@ private:
     QLineSeries *accelerationSeries = nullptr;
     QSplineSeries *temperatureSeries = nullptr;
 
-    int vibration = 0, forceX = 0, forceY = 0, forceZ = 0, acceleration = 0;
+    double vibration = 0, forceX = 0, forceY = 0, forceZ = 0, acceleration = 0;
     int currentTime = 0;
-    double temperature = 0;
+    double temperature = 20.0;
 };
 
 #endif // MAINWINDOW_H
