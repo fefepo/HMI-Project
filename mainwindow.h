@@ -31,7 +31,7 @@ private slots:
     void on_forceZSlider_valueChanged(int value);
     void on_accelerationSlider_valueChanged(int value);
     void on_dataReceived(QString data);
-    void on_resetButton_clicked(); // [추가] 재시작 버튼 슬롯
+    void on_resetButton_clicked(); // 재시작 버튼
 
 private:
     Ui::MainWindow *ui;
@@ -56,6 +56,10 @@ private:
     double vibration = 0, forceX = 0, forceY = 0, forceZ = 0, acceleration = 0;
     int currentTime = 0;
     double temperature = 20.0;
+
+    QDateTime lastVibWarningTime; // 마지막 진동 경고 발생 시각
+    QDateTime lastTempWarningTime; // 마지막 온도 경고 발생 시각
+
 };
 
 #endif // MAINWINDOW_H
