@@ -115,17 +115,20 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateSensorData()
 {
-    // [중요] CSV 모드일 때만 파일에서 값을 읽어옴 (슬라이더 조작 시 이 블록은 건너뜀)
-    if (isCsvMode && inputStream && !inputStream->atEnd()) {
+    // [중요] CSV 파일에서 데이터를 읽어오는 로직
+    if (inputStream && !inputStream->atEnd()) {
         QString line = inputStream->readLine();
         QStringList values = line.split(",");
+
         if (values.size() >= 4) {
-            forceX = values[0].toDouble();
-            forceY = values[1].toDouble();
-            forceZ = values[2].toDouble();
-            acceleration = values[3].toDouble();
+            // [수정] 각 센서별로 수동 조작 중이 아닐 때만 파일 값 적용
+            if (!manualForceX) forceX = values[0].toDouble();
+            if (!manualForceY) forceY = values[1].toDouble();
+            if (!manualForceZ) forceZ = values[2].toDouble();
+            if (!manualAcceleration) acceleration = values[3].toDouble();
         }
-    } else if (isCsvMode && inputStream) {
+    } else if (inputStream) {
+        // 파일 끝에 도달하면 다시 처음으로 (반복 읽기)
         inputStream->device()->seek(0);
         inputStream->readLine();
     }
@@ -247,14 +250,9 @@ void MainWindow::on_resetButton_clicked()
 {
     qDebug() << "시스템 재시작 및 로그 기록 복구 중...";
 
-    // 1. 모드 및 타이머 초기화
-    isCsvMode = true;
-    if (!timer->isActive()) {
-        timer->start(20);
-    }
 
     // 2. 쓰기용 로그 파일이 닫혀있다면 다시 열기
-    // 인터락 발생 시 close()된 파일을 다시 Append(추가) 모드로 엽니다.
+    // 인터락 발생 시 close()된 파일을 다시 Append(추가) 모드로 열기.
     if (logFile && !logFile->isOpen()) {
         if (logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
             qDebug() << "로그 파일이 다시 연결되었습니다.";
@@ -287,15 +285,38 @@ void MainWindow::on_resetButton_clicked()
     ui->forceZSlider->setValue(0);
     ui->accelerationSlider->setValue(0);
 
-
     // 7. 스타일 초기화
     ui->vibrationLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14pt;");
     ui->tempLabel->setStyleSheet("color: #FF8000; font-weight: bold; font-size: 14pt;");
+
+    // 8. 모든 센서를 다시 CSV 모드로 복구
+    manualForceX = false;
+    manualForceY = false;
+    manualForceZ = false;
+    manualAcceleration = false;
+
+    // 9. 시스템 재시작 (20ms 주기)
+    if (timer && !timer->isActive()) {
+        timer->start(20);
+        qDebug() << "시스템이 재시작 시작되었습니다.";
+    }
 }
 
 //  슬라이더를 건드리면 CSV 모드를 해제하여 수동 제어가 가능하게 함
-void MainWindow::on_accelerationSlider_valueChanged(int value) { acceleration = value; isCsvMode = false; }
-void MainWindow::on_forceXSlider_valueChanged(int value) { forceX = value; isCsvMode = false; }
-void MainWindow::on_forceYSlider_valueChanged(int value) { forceY = value; isCsvMode = false; }
-void MainWindow::on_forceZSlider_valueChanged(int value) { forceZ = value; isCsvMode = false; }
+void MainWindow::on_forceXSlider_valueChanged(int value) {
+    forceX = value;
+    manualForceX = true; // X축만 수동 모드로 전환
+}
+void MainWindow::on_forceYSlider_valueChanged(int value) {
+    forceY = value;
+    manualForceY = true; // Y축만 수동 모드로 전환
+}
+void MainWindow::on_forceZSlider_valueChanged(int value) {
+    forceZ = value;
+    manualForceZ = true; // Z축만 수동 모드로 전환
+}
+void MainWindow::on_accelerationSlider_valueChanged(int value) {
+    acceleration = value;
+    manualAcceleration = true; // 가속도만 수동 모드로 전환
+}
 void MainWindow::on_dataReceived(QString data) { qDebug() << "Recv:" << data; }
