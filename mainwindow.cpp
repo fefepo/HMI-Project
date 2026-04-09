@@ -17,7 +17,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->resetButton, &QPushButton::clicked, this, &MainWindow::on_resetButton_clicked);
 
 
-    // 1. 로그 파일 초기화 
+    // 1. 로그 파일 초기화
     QString filename = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + "_log.csv";
     logFile = new QFile(filename, this);
     if (logFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -25,7 +25,7 @@ MainWindow::MainWindow(QWidget *parent)
         out << "Time,ForceX,ForceY,ForceZ,Acceleration,Vibration,Temperature,Status\n";
     }
 
-    // [추가] 읽어올 CSV 파일 열기
+    //  읽어올 CSV 파일 열기
     inputFile = new QFile("sensor_data.csv");
     if (inputFile->open(QIODevice::ReadOnly | QIODevice::Text)) {
         inputStream = new QTextStream(inputFile);
@@ -99,6 +99,11 @@ MainWindow::MainWindow(QWidget *parent)
     ui->forceZLabel->setStyleSheet("color: blue; font-weight: bold;");
     ui->accelerationLabel->setStyleSheet("color: #D4A017; font-weight: bold;");
     ui->tempLabel->setStyleSheet("color: #FF8000; font-weight: bold; font-size: 14pt;");
+
+    // 4. 초기 시간을 10초 전으로 설정하여 첫 경고는 즉시 뜨게 함
+    lastVibWarningTime = QDateTime::currentDateTime().addSecs(-10);
+    lastTempWarningTime = QDateTime::currentDateTime().addSecs(-10);
+
 }
 
 MainWindow::~MainWindow()
@@ -130,6 +135,35 @@ void MainWindow::updateSensorData()
     vibration = (average * 0.95) + QRandomGenerator::global()->bounded(0, 11);
     double targetTemp = 25.0 + (average * 0.7);
     temperature += (targetTemp - temperature) * 0.005;
+
+
+    // 데이터 읽기 로직
+    QDateTime currentTimeInstance = QDateTime::currentDateTime();
+
+    // [추가] 1.5 워닝(Warning) 체크 - 시스템은 멈추지 않음
+    // 진동 경고 (80 이상일 때)
+    if (vibration >= 80.0) {
+        // 마지막 경고로부터 5000ms(5초)가 지났는지 확인
+        if (lastVibWarningTime.msecsTo(currentTimeInstance) >= 5000) {
+            lastVibWarningTime = currentTimeInstance; // 시간 갱신 (이제부터 다시 5초 카운트)
+            QMessageBox::warning(this, "⚠️ 경고", "진동 수치가 위험 수준(80.0)에 도달했습니다!");
+        }
+        ui->vibrationLabel->setStyleSheet("color: red; font-weight: bold; font-size: 16pt;");
+    } else {
+        ui->vibrationLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14pt;");
+
+    }
+
+    // 온도 경고 (70 이상일 때)
+    if (temperature >= 70.0 && temperature < 85.0) {
+        if (lastTempWarningTime.msecsTo(currentTimeInstance) >= 5000) {
+            lastTempWarningTime = currentTimeInstance; // 시간 갱신
+            QMessageBox::warning(this, "⚠️ 경고", "온도가 주의 수준(70.0°C)에 도달했습니다!");
+        }
+        ui->tempLabel->setStyleSheet("color: red; font-weight: bold; font-size: 16pt;");
+    } else if (temperature < 70.0) {
+        ui->tempLabel->setStyleSheet("color: #FF8000; font-weight: bold; font-size: 14pt;");
+    }
 
     // 2. 인터락 체크 (핵심 수정: 개별 항목 검사)
     if (forceX >= 90.0 || forceY >= 90.0 || forceZ >= 90.0 || acceleration >= 90.0 || temperature >= 85.0) {
@@ -219,7 +253,7 @@ void MainWindow::on_resetButton_clicked()
         timer->start(20);
     }
 
-    // 2. [추가] 쓰기용 로그 파일이 닫혀있다면 다시 열기
+    // 2. 쓰기용 로그 파일이 닫혀있다면 다시 열기
     // 인터락 발생 시 close()된 파일을 다시 Append(추가) 모드로 엽니다.
     if (logFile && !logFile->isOpen()) {
         if (logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
@@ -252,9 +286,14 @@ void MainWindow::on_resetButton_clicked()
     ui->forceYSlider->setValue(0);
     ui->forceZSlider->setValue(0);
     ui->accelerationSlider->setValue(0);
+
+
+    // 7. 스타일 초기화
+    ui->vibrationLabel->setStyleSheet("color: black; font-weight: bold; font-size: 14pt;");
+    ui->tempLabel->setStyleSheet("color: #FF8000; font-weight: bold; font-size: 14pt;");
 }
 
-// [핵심] 슬라이더를 건드리면 CSV 모드를 해제하여 수동 제어가 가능하게 함
+//  슬라이더를 건드리면 CSV 모드를 해제하여 수동 제어가 가능하게 함
 void MainWindow::on_accelerationSlider_valueChanged(int value) { acceleration = value; isCsvMode = false; }
 void MainWindow::on_forceXSlider_valueChanged(int value) { forceX = value; isCsvMode = false; }
 void MainWindow::on_forceYSlider_valueChanged(int value) { forceY = value; isCsvMode = false; }
