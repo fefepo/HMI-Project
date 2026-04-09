@@ -133,6 +133,29 @@ void MainWindow::updateSensorData()
         inputStream->readLine();
     }
 
+    // [수정] 수동 조작 시 미세 떨림 (값이 누적되지 않도록 슬라이더 값 기준 계산)
+    if (manualForceX) {
+        // -0.5 ~ 0.5 정도 노이즈
+        double noise = (QRandomGenerator::global()->bounded(-50, 51)) / 100.0;
+        forceX = ui->forceXSlider->value() + noise;
+    }
+
+    if (manualForceY) {
+        double noise = (QRandomGenerator::global()->bounded(-50, 51)) / 100.0;
+        forceY = ui->forceYSlider->value() + noise;
+    }
+
+    if (manualForceZ) {
+        double noise = (QRandomGenerator::global()->bounded(-50, 51)) / 100.0;
+        forceZ = ui->forceZSlider->value() + noise;
+    }
+
+    if (manualAcceleration) {
+        double noise = (QRandomGenerator::global()->bounded(-50, 51)) / 100.0;
+        acceleration = ui->accelerationSlider->value() + noise;
+    }
+
+
     // 1. 데이터 계산
     double average = (forceX + forceY + forceZ + acceleration) / 4.0;
     vibration = (average * 0.95) + QRandomGenerator::global()->bounded(0, 11);
@@ -140,7 +163,7 @@ void MainWindow::updateSensorData()
     temperature += (targetTemp - temperature) * 0.005;
 
 
-    // 데이터 읽기 로직
+    // 현재 시각을 확인
     QDateTime currentTimeInstance = QDateTime::currentDateTime();
 
     // [추가] 1.5 워닝(Warning) 체크 - 시스템은 멈추지 않음
@@ -168,8 +191,8 @@ void MainWindow::updateSensorData()
         ui->tempLabel->setStyleSheet("color: #FF8000; font-weight: bold; font-size: 14pt;");
     }
 
-    // 2. 인터락 체크 (핵심 수정: 개별 항목 검사)
-    if (forceX >= 90.0 || forceY >= 90.0 || forceZ >= 90.0 || acceleration >= 90.0 || temperature >= 85.0) {
+    // 2. 인터락 체크 (핵심: 개별 항목 검사)
+    if (forceX >= 90.0 || forceY >= 90.0 || forceZ >= 90.0 || acceleration >= 90.0 || temperature >= 85.0 || vibration >= 90.0) {
         timer->stop();
 
         QString errorMsg;
