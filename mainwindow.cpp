@@ -4,9 +4,6 @@
 #include <QVBoxLayout>
 #include <QDebug>
 #include <QMessageBox>
-#include <QtCharts/QSplineSeries>
-#include <QFile>
-#include <QTextStream>
 #include <QDateTime>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -17,14 +14,22 @@ MainWindow::MainWindow(QWidget *parent)
     , temperature(20.0)
 {
     ui->setupUi(this);
+    connect(ui->resetButton, &QPushButton::clicked, this, &MainWindow::on_resetButton_clicked);
 
-    // 1. 로그 파일 초기화
+
+    // 1. 로그 파일 초기화 
     QString filename = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + "_log.csv";
     logFile = new QFile(filename, this);
-
     if (logFile->open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(logFile);
         out << "Time,ForceX,ForceY,ForceZ,Acceleration,Vibration,Temperature,Status\n";
+    }
+
+    // [추가] 읽어올 CSV 파일 열기
+    inputFile = new QFile("sensor_data.csv");
+    if (inputFile->open(QIODevice::ReadOnly | QIODevice::Text)) {
+        inputStream = new QTextStream(inputFile);
+        inputStream->readLine(); // 헤더 스킵
     }
 
     server = new Server(this);
@@ -34,30 +39,30 @@ MainWindow::MainWindow(QWidget *parent)
     connect(timer, &QTimer::timeout, this, &MainWindow::updateSensorData);
     connect(server, &Server::dataReceived, this, &MainWindow::on_dataReceived);
 
-    timer->start(20);
+    timer->start(20); // 20ms 주기 유지
 
     // 2. 차트 설정
     QChart *chart = new QChart();
     chart->setTitle("장비 통합 제어 HMI");
     chart->legend()->setAlignment(Qt::AlignRight);
 
-    vibrationSeries = new QSplineSeries();
+    vibrationSeries = new QLineSeries();
     vibrationSeries->setName("진동 (검정)");
     vibrationSeries->setPen(QPen(Qt::black, 1));
 
-    forceSeriesX = new QSplineSeries();
+    forceSeriesX = new QLineSeries();
     forceSeriesX->setName("압력X (빨강)");
     forceSeriesX->setPen(QPen(Qt::red, 2));
 
-    forceSeriesY = new QSplineSeries();
+    forceSeriesY = new QLineSeries();
     forceSeriesY->setName("압력Y (초록)");
     forceSeriesY->setPen(QPen(QColor("#228B22"), 2));
 
-    forceSeriesZ = new QSplineSeries();
+    forceSeriesZ = new QLineSeries();
     forceSeriesZ->setName("압력Z (파랑)");
     forceSeriesZ->setPen(QPen(Qt::blue, 2));
 
-    accelerationSeries = new QSplineSeries();
+    accelerationSeries = new QLineSeries();
     accelerationSeries->setName("가속도 (노랑)");
     accelerationSeries->setPen(QPen(QColor("#EEB400"), 3));
 
@@ -99,15 +104,30 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     if (logFile && logFile->isOpen()) logFile->close();
+    if (inputFile && inputFile->isOpen()) inputFile->close();
     delete ui;
 }
 
 void MainWindow::updateSensorData()
 {
-    // 1. 데이터 계산 (진동과 온도는 여전히 전체적인 부하 흐름을 따름)
+    // [중요] CSV 모드일 때만 파일에서 값을 읽어옴 (슬라이더 조작 시 이 블록은 건너뜀)
+    if (isCsvMode && inputStream && !inputStream->atEnd()) {
+        QString line = inputStream->readLine();
+        QStringList values = line.split(",");
+        if (values.size() >= 4) {
+            forceX = values[0].toDouble();
+            forceY = values[1].toDouble();
+            forceZ = values[2].toDouble();
+            acceleration = values[3].toDouble();
+        }
+    } else if (isCsvMode && inputStream) {
+        inputStream->device()->seek(0);
+        inputStream->readLine();
+    }
+
+    // 1. 데이터 계산
     double average = (forceX + forceY + forceZ + acceleration) / 4.0;
     vibration = (average * 0.95) + QRandomGenerator::global()->bounded(0, 11);
-
     double targetTemp = 25.0 + (average * 0.7);
     temperature += (targetTemp - temperature) * 0.005;
 
@@ -157,14 +177,13 @@ void MainWindow::updateSensorData()
         return;
     }
 
-    // 3. 3초 단위 정기 로깅 (20ms * 150 = 3,000ms)
+    // 3. 정기 로깅
     if (currentTime > 0 && currentTime % 150 == 0) {
         if (logFile->isOpen()) {
             QTextStream out(logFile);
             out << currentTime << "," << forceX << "," << forceY << "," << forceZ << ","
                 << acceleration << "," << vibration << "," << temperature << ",NORMAL\n";
             out.flush();
-            qDebug() << "3-second log saved at" << QDateTime::currentDateTime().toString("hh:mm:ss");
         }
     }
 
@@ -181,16 +200,63 @@ void MainWindow::updateSensorData()
         vibrationSeries->chart()->axes(Qt::Horizontal).first()->setRange(currentTime - 500, currentTime);
     }
 
+    // 라벨 및 슬라이더 위치 동기화 (CSV 모드일 때 슬라이더가 같이 움직이게 함)
     ui->vibrationLabel->setText(QString::number(vibration, 'f', 1));
-    ui->forceXLabel->setText(QString::number(forceX));
-    ui->forceYLabel->setText(QString::number(forceY));
-    ui->forceZLabel->setText(QString::number(forceZ));
-    ui->accelerationLabel->setText(QString::number(acceleration));
+    ui->forceXLabel->setText(QString::number(forceX, 'f', 1));
+    ui->forceYLabel->setText(QString::number(forceY, 'f', 1));
+    ui->forceZLabel->setText(QString::number(forceZ, 'f', 1));
+    ui->accelerationLabel->setText(QString::number(acceleration, 'f', 1));
     ui->tempLabel->setText(QString::number(temperature, 'f', 1) + " °C");
 }
 
-void MainWindow::on_accelerationSlider_valueChanged(int value) { acceleration = value; }
-void MainWindow::on_forceXSlider_valueChanged(int value) { forceX = value; }
-void MainWindow::on_forceYSlider_valueChanged(int value) { forceY = value; }
-void MainWindow::on_forceZSlider_valueChanged(int value) { forceZ = value; }
+void MainWindow::on_resetButton_clicked()
+{
+    qDebug() << "시스템 재시작 및 로그 기록 복구 중...";
+
+    // 1. 모드 및 타이머 초기화
+    isCsvMode = true;
+    if (!timer->isActive()) {
+        timer->start(20);
+    }
+
+    // 2. [추가] 쓰기용 로그 파일이 닫혀있다면 다시 열기
+    // 인터락 발생 시 close()된 파일을 다시 Append(추가) 모드로 엽니다.
+    if (logFile && !logFile->isOpen()) {
+        if (logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            qDebug() << "로그 파일이 다시 연결되었습니다.";
+        }
+    }
+
+    // 3. 읽기용 CSV 파일 포인터 처음으로
+    if (inputStream) {
+        inputStream->device()->seek(0);
+        inputStream->readLine(); // 헤더 스킵
+    }
+
+    // 4. 시간 및 차트 데이터 리셋 (즉시 표시를 위해)
+    currentTime = 0;
+    vibrationSeries->clear();
+    forceSeriesX->clear();
+    forceSeriesY->clear();
+    forceSeriesZ->clear();
+    accelerationSeries->clear();
+    temperatureSeries->clear();
+
+    // 5. X축 범위 리셋
+    if (!vibrationSeries->chart()->axes(Qt::Horizontal).isEmpty()) {
+        vibrationSeries->chart()->axes(Qt::Horizontal).first()->setRange(0, 500);
+    }
+
+    // 6. 슬라이더 초기화
+    ui->forceXSlider->setValue(0);
+    ui->forceYSlider->setValue(0);
+    ui->forceZSlider->setValue(0);
+    ui->accelerationSlider->setValue(0);
+}
+
+// [핵심] 슬라이더를 건드리면 CSV 모드를 해제하여 수동 제어가 가능하게 함
+void MainWindow::on_accelerationSlider_valueChanged(int value) { acceleration = value; isCsvMode = false; }
+void MainWindow::on_forceXSlider_valueChanged(int value) { forceX = value; isCsvMode = false; }
+void MainWindow::on_forceYSlider_valueChanged(int value) { forceY = value; isCsvMode = false; }
+void MainWindow::on_forceZSlider_valueChanged(int value) { forceZ = value; isCsvMode = false; }
 void MainWindow::on_dataReceived(QString data) { qDebug() << "Recv:" << data; }
