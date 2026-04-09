@@ -168,7 +168,7 @@ void MainWindow::updateSensorData()
 
     // [추가] 1.5 워닝(Warning) 체크 - 시스템은 멈추지 않음
     // 진동 경고 (80 이상일 때)
-    if (vibration >= 80.0) {
+    if (vibration >= 80.0 && vibration < 90.0) {
         // 마지막 경고로부터 5000ms(5초)가 지났는지 확인
         if (lastVibWarningTime.msecsTo(currentTimeInstance) >= 5000) {
             lastVibWarningTime = currentTimeInstance; // 시간 갱신 (이제부터 다시 5초 카운트)
@@ -202,6 +202,12 @@ void MainWindow::updateSensorData()
             // [원인: 과열]
             logStatus = "OVERHEAT";
             errorMsg = QString("장비 과열(Overheat) 인터락 발생!\n현재 온도: %1°C (최대치: 85.0°C)").arg(temperature, 0, 'f', 1);
+        }
+        else if (vibration >= 90.0) {
+            // [원인: 진동 임계치 초과 시]
+            logStatus = "VIBRATION";
+            errorMsg = QString("진동(Vibration) 인터락 발생!\n"
+                               "현재 진동: %1 (최대치: 90.0)").arg(vibration, 0, 'f', 1);
         }
         else {
             // [원인: 과부하] - 어떤 항목이 범인인지 특정
